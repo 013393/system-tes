@@ -281,18 +281,18 @@ const totalOverdue = computed(() =>
       <el-form label-position="top">
 
         <el-form-item label="Member">
-          <el-select
-            v-model="form.member"
-            placeholder="Select member"
-            style="width: 100%"
-          >
-            <el-option
-              v-for="member in members.filter(m => m.status === 'Active')"
-              :key="member.id"
-              :label="member.name"
-              :value="member.name"
-            />
-          </el-select>
+<el-select
+  v-model="form.member"
+  placeholder="Select member"
+  style="width: 100%"
+>
+  <el-option
+    v-for="member in members"
+    :key="member.id"
+    :label="member.name"
+    :value="member.name"
+  />
+</el-select>
         </el-form-item>
 
         <el-form-item label="Book">
@@ -320,16 +320,14 @@ const totalOverdue = computed(() =>
           />
         </el-form-item>
 
-        <el-form-item label="Due Date">
-          <el-date-picker
-            v-model="form.dueDate"
-            type="date"
-            value-format="YYYY-MM-DD"
-            :disabled-date="date => date <= new Date(form.borrowDate)"
-            placeholder="Select due date"
-            style="width: 100%"
-          />
-        </el-form-item>
+       <el-date-picker
+  v-model="form.dueDate"
+  type="date"
+  value-format="YYYY-MM-DD"
+  :disabled-date="date => date <= new Date(form.borrowDate)"
+  placeholder="Select due date"
+  style="width: 100%"
+/>
 
       </el-form>
 
