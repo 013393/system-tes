@@ -1,6 +1,7 @@
 
 <script setup>
 import { ref, computed, onMounted } from 'vue'
+import { ElMessage, ElMessageBox } from 'element-plus'
 
 const dialogVisible = ref(false)
 const search = ref('')
@@ -25,9 +26,11 @@ function todayDate() {
   return `${year}-${month}-${day}`
 }
 
-function getStatus(item) {
-  if (item.status === 'Returned') return 'Returned'
+function getBookName(book) {
+  return book.title || book.name || ''
+}
 
+function getStatus(item) {
   if (item.dueDate < todayDate()) {
     return 'Overdue'
   }
@@ -48,13 +51,28 @@ function loadData() {
     localStorage.getItem('books') || '[]'
   )
 
-  books.value = savedBooks.filter(book => Number(book.stock) > 0)
+  books.value = savedBooks.filter(book => {
+    if (book.stock === undefined || book.stock === null) {
+      return true
+    }
+
+    return Number(book.stock) > 0
+  })
 }
 
-function saveData() {
+function saveBorrowings() {
   localStorage.setItem(
     'borrowings',
     JSON.stringify(borrowings.value)
+  )
+}
+
+function saveBooks() {
+  localStorage.setItem(
+    'books',
+    JSON.stringify(
+      JSON.parse(localStorage.getItem('books') || '[]')
+    )
   )
 }
 
@@ -62,10 +80,22 @@ onMounted(loadData)
 
 const filteredBorrowings = computed(() => {
   return borrowings.value.filter(item =>
-    item.member.toLowerCase().includes(search.value.toLowerCase()) ||
-    item.book.toLowerCase().includes(search.value.toLowerCase())
+    String(item.member || '').toLowerCase().includes(search.value.toLowerCase()) ||
+    String(item.book || '').toLowerCase().includes(search.value.toLowerCase())
   )
 })
+
+const totalBorrowed = computed(() =>
+  borrowings.value.filter(
+    item => getStatus(item) === 'Borrowed'
+  ).length
+)
+
+const totalOverdue = computed(() =>
+  borrowings.value.filter(
+    item => getStatus(item) === 'Overdue'
+  ).length
+)
 
 function openAdd() {
   loadData()
@@ -87,15 +117,51 @@ function saveBorrowing() {
     !form.value.borrowDate ||
     !form.value.dueDate
   ) {
+    ElMessage.warning('Please fill in all fields')
     return
   }
 
   if (form.value.dueDate <= form.value.borrowDate) {
+    ElMessage.warning('Due date must be after borrow date')
     return
   }
 
+  const savedBooks = JSON.parse(
+    localStorage.getItem('books') || '[]'
+  )
+
+  const selectedBook = savedBooks.find(
+    book => getBookName(book) === form.value.book
+  )
+
+  if (!selectedBook) {
+    ElMessage.error('Book not found')
+    return
+  }
+
+  if (
+    selectedBook.stock !== undefined &&
+    selectedBook.stock !== null &&
+    Number(selectedBook.stock) <= 0
+  ) {
+    ElMessage.error('Book is out of stock')
+    return
+  }
+
+  if (
+    selectedBook.stock !== undefined &&
+    selectedBook.stock !== null
+  ) {
+    selectedBook.stock = Number(selectedBook.stock) - 1
+
+    localStorage.setItem(
+      'books',
+      JSON.stringify(savedBooks)
+    )
+  }
+
   const newId = borrowings.value.length > 0
-    ? Math.max(...borrowings.value.map(item => Number(item.id))) + 1
+    ? Math.max(...borrowings.value.map(item => Number(item.id) || 0)) + 1
     : 1
 
   borrowings.value.push({
@@ -104,52 +170,86 @@ function saveBorrowing() {
     status: 'Borrowed'
   })
 
-  saveData()
+  saveBorrowings()
+  loadData()
+
   dialogVisible.value = false
+
+  ElMessage.success('Book borrowed successfully')
 }
 
 function returnBook(item) {
-  const returns = JSON.parse(
-    localStorage.getItem('returns') || '[]'
-  )
+  ElMessageBox.confirm(
+    'Are you sure you want to return this book?',
+    'Return Book',
+    {
+      confirmButtonText: 'Yes',
+      cancelButtonText: 'Cancel',
+      type: 'warning'
+    }
+  ).then(() => {
+    const returns = JSON.parse(
+      localStorage.getItem('returns') || '[]'
+    )
 
-  returns.push({
-    ...item,
-    returnDate: todayDate(),
-    status: 'Returned'
-  })
+    const savedBooks = JSON.parse(
+      localStorage.getItem('books') || '[]'
+    )
 
-  localStorage.setItem(
-    'returns',
-    JSON.stringify(returns)
-  )
+    const selectedBook = savedBooks.find(
+      book => getBookName(book) === item.book
+    )
 
-  borrowings.value = borrowings.value.filter(
-    borrow => borrow.id !== item.id
-  )
+    if (selectedBook && selectedBook.stock !== undefined && selectedBook.stock !== null) {
+      selectedBook.stock = Number(selectedBook.stock) + 1
 
-  saveData()
+      localStorage.setItem(
+        'books',
+        JSON.stringify(savedBooks)
+      )
+    }
+
+    returns.push({
+      ...item,
+      returnDate: todayDate(),
+      status: 'Returned'
+    })
+
+    localStorage.setItem(
+      'returns',
+      JSON.stringify(returns)
+    )
+
+    borrowings.value = borrowings.value.filter(
+      borrow => borrow.id !== item.id
+    )
+
+    saveBorrowings()
+    loadData()
+
+    ElMessage.success('Book returned successfully')
+  }).catch(() => {})
 }
 
 function deleteBorrowing(id) {
-  borrowings.value = borrowings.value.filter(
-    item => item.id !== id
-  )
+  ElMessageBox.confirm(
+    'Are you sure you want to delete this borrowing record?',
+    'Delete',
+    {
+      confirmButtonText: 'Delete',
+      cancelButtonText: 'Cancel',
+      type: 'warning'
+    }
+  ).then(() => {
+    borrowings.value = borrowings.value.filter(
+      item => item.id !== id
+    )
 
-  saveData()
+    saveBorrowings()
+
+    ElMessage.success('Record deleted')
+  }).catch(() => {})
 }
-
-const totalBorrowed = computed(() =>
-  borrowings.value.filter(
-    item => getStatus(item) === 'Borrowed'
-  ).length
-)
-
-const totalOverdue = computed(() =>
-  borrowings.value.filter(
-    item => getStatus(item) === 'Overdue'
-  ).length
-)
 </script>
 
 <template>
@@ -184,7 +284,7 @@ const totalOverdue = computed(() =>
 
     </el-row>
 
-    <el-card>
+    <el-card shadow="hover">
 
       <el-input
         v-model="search"
@@ -193,7 +293,12 @@ const totalOverdue = computed(() =>
         style="max-width: 350px; margin-bottom: 20px"
       />
 
-      <el-table :data="filteredBorrowings" stripe>
+      <el-table
+        :data="filteredBorrowings"
+        stripe
+        border
+        style="width: 100%"
+      >
 
         <el-table-column
           prop="id"
@@ -204,44 +309,42 @@ const totalOverdue = computed(() =>
         <el-table-column
           prop="member"
           label="Member"
-          min-width="150"
+          min-width="160"
         />
 
         <el-table-column
           prop="book"
           label="Book"
-          min-width="180"
+          min-width="200"
         />
 
         <el-table-column
           prop="borrowDate"
           label="Borrow Date"
-          min-width="140"
+          min-width="150"
         />
 
         <el-table-column
           prop="dueDate"
           label="Due Date"
-          min-width="140"
+          min-width="150"
         />
 
-        <el-table-column label="Status" min-width="120">
+        <el-table-column label="Status" min-width="130">
           <template #default="scope">
             <el-tag
-              :type="
-                getStatus(scope.row) === 'Overdue'
-                  ? 'danger'
-                  : getStatus(scope.row) === 'Borrowed'
-                    ? 'warning'
-                    : 'success'
-              "
+              :type="getStatus(scope.row) === 'Overdue' ? 'danger' : 'warning'"
             >
               {{ getStatus(scope.row) }}
             </el-tag>
           </template>
         </el-table-column>
 
-        <el-table-column label="Actions" min-width="190" fixed="right">
+        <el-table-column
+          label="Actions"
+          min-width="190"
+          fixed="right"
+        >
           <template #default="scope">
 
             <el-button
@@ -280,37 +383,39 @@ const totalOverdue = computed(() =>
 
       <el-form label-position="top">
 
-        <el-form-item label="Member">
-<el-select
-  v-model="form.member"
-  placeholder="Select member"
-  style="width: 100%"
->
-  <el-option
-    v-for="member in members"
-    :key="member.id"
-    :label="member.name"
-    :value="member.name"
-  />
-</el-select>
-        </el-form-item>
-
-        <el-form-item label="Book">
+        <el-form-item label="Member" required>
           <el-select
-            v-model="form.book"
-            placeholder="Select book"
+            v-model="form.member"
+            placeholder="Select member"
             style="width: 100%"
+            filterable
           >
             <el-option
-              v-for="book in books"
-              :key="book.id"
-              :label="book.title"
-              :value="book.title"
+              v-for="member in members"
+              :key="member.id"
+              :label="member.name"
+              :value="member.name"
             />
           </el-select>
         </el-form-item>
 
-        <el-form-item label="Borrow Date">
+        <el-form-item label="Book" required>
+          <el-select
+            v-model="form.book"
+            placeholder="Select book"
+            style="width: 100%"
+            filterable
+          >
+            <el-option
+              v-for="book in books"
+              :key="book.id"
+              :label="getBookName(book)"
+              :value="getBookName(book)"
+            />
+          </el-select>
+        </el-form-item>
+
+        <el-form-item label="Borrow Date" required>
           <el-date-picker
             v-model="form.borrowDate"
             type="date"
@@ -320,14 +425,16 @@ const totalOverdue = computed(() =>
           />
         </el-form-item>
 
-       <el-date-picker
-  v-model="form.dueDate"
-  type="date"
-  value-format="YYYY-MM-DD"
-  :disabled-date="date => date <= new Date(form.borrowDate)"
-  placeholder="Select due date"
-  style="width: 100%"
-/>
+        <el-form-item label="Due Date" required>
+          <el-date-picker
+            v-model="form.dueDate"
+            type="date"
+            value-format="YYYY-MM-DD"
+            :disabled-date="date => form.borrowDate ? date <= new Date(form.borrowDate + 'T00:00:00') : false"
+            placeholder="Select due date"
+            style="width: 100%"
+          />
+        </el-form-item>
 
       </el-form>
 
@@ -395,7 +502,7 @@ const totalOverdue = computed(() =>
 }
 
 .summary .overdue {
-  color: goldenrod;
+  color: #e6a23c;
 }
 
 @media (max-width: 768px) {
